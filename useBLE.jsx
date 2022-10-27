@@ -28,19 +28,44 @@ export default function useBLE() {
     });
   };
 
-  const getDeviceDetails = async device => {
-    if (!(await bleManager.isDeviceConnected(device.id))) {
-      device = await device.connect();
-    }
+  async function getUniqueServices(device) {
+    let services = await device.services();
+    const uniqueServiceUUID = {};
+    return services.filter(service => {
+      if (uniqueServiceUUID[service.uuid] === undefined) {
+        uniqueServiceUUID[service.uuid] = 1;
+        return true;
+      }
 
+      return false;
+    });
+  }
+
+  const readCharacteristic = async (service, cid) => {
+    let device = await bleManager.connectToDevice(service.deviceID);
+    console.log('connected to device');
     device = await device.discoverAllServicesAndCharacteristics();
-    const services = await device.services();
+    console.log('discovered');
+    const value = await device.readCharacteristicForService(service.uuid, cid);
+    console.log('read: ' + JSON.stringify(value));
+
+    await device.cancelConnection();
+
+    return value;
+  };
+
+  const getDeviceDetails = async device => {
+    device = await device.connect();
+    device = await device.discoverAllServicesAndCharacteristics();
+    let services = await getUniqueServices(device);
+
     const promises = services.map(async service => ({
       characteristics: await service.characteristics(),
       service: service,
     }));
 
     const details = await Promise.all(promises);
+    await device.cancelConnection();
 
     return {device, details};
   };
@@ -72,6 +97,7 @@ export default function useBLE() {
     requestPermissions,
     scanForDevices: scanDevices,
     getDeviceDetails,
+    readCharacteristic,
     devices,
   };
 }

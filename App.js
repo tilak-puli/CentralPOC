@@ -2,6 +2,7 @@ import React, {useState} from 'react';
 import type {Node} from 'react';
 import {
   SafeAreaView,
+  ScrollView,
   StyleSheet,
   Text,
   TouchableOpacity,
@@ -9,6 +10,7 @@ import {
 } from 'react-native';
 
 import useBLE from './useBLE';
+import Base64 from 'react-native-base64';
 
 function DeviceBox(props: {device: any, onDeviceConnect: () => void}) {
   return (
@@ -35,7 +37,7 @@ function DeviceBox(props: {device: any, onDeviceConnect: () => void}) {
 
 function DevicesList(props: {devices: [], onDeviceConnect: () => {}}) {
   return (
-    <View style={styles.flexItem}>
+    <ScrollView style={styles.flexItem}>
       <Text style={styles.titlebar}>{'Available Devices'}</Text>
       <View style={styles.listWrapper}>
         {props.devices?.map(device => (
@@ -46,57 +48,136 @@ function DevicesList(props: {devices: [], onDeviceConnect: () => {}}) {
           />
         ))}
       </View>
+    </ScrollView>
+  );
+}
+
+function CharacteristicBox(props: {char: any, readValue: () => {}}) {
+  const properties = [
+    props.char.isReadable && 'READ',
+    (props.char.isWritableWithResponse ||
+      props.char.isWritableWithoutResponse) &&
+      'WRITE',
+  ].filter(v => v !== false);
+
+  return (
+    <View style={styles.characteristicBox}>
+      <Text style={styles.collapsedItemTitle}>Custom Characteristic</Text>
+      <View style={styles.secondaryText}>
+        <Text style={styles.secondaryTextName}>Id: </Text>
+        <Text style={styles.secondaryTextValue}>{props.char.id}</Text>
+      </View>
+      <View style={styles.secondaryText}>
+        <Text style={styles.secondaryTextName}>UUID: </Text>
+        <Text style={styles.secondaryTextValue}>{props.char.uuid}</Text>
+      </View>
+      <View style={styles.secondaryText}>
+        <Text style={styles.secondaryTextName}>Value: </Text>
+        <Text style={styles.secondaryTextValue}>
+          {Base64.decode(props.char.value || '')}
+        </Text>
+      </View>
+      <View style={styles.secondaryText}>
+        <Text style={styles.secondaryTextName}>Properties: </Text>
+        <Text style={styles.secondaryTextValue}>{properties.join(', ')}</Text>
+      </View>
+      <TouchableOpacity
+        onPress={() => props.readValue(props.char.uuid)}
+        style={styles.viewDetailsButton}>
+        <Text style={styles.cButtonText}>{'Read'}</Text>
+      </TouchableOpacity>
     </View>
   );
 }
 
-function ServiceDetail(props: {detail: any}) {
-  const [collapsed, setCollapsed] = useState(false);
+function ServiceDetail(props: {detail: any, readValue: () => {}}) {
+  const [collapsed, setCollapsed] = useState(true);
   const toggleCollapsed = () => {
     setCollapsed(prev => !prev);
   };
 
   return (
-    <View style={styles.listItem}>
-      <View style={styles.listItemContent}>
-        <Text style={styles.heading2}>
-          Custom Service: {props.detail.service.id}
-        </Text>
-        <View style={styles.secondaryText}>
-          <Text style={styles.secondaryTextName}>UUID: </Text>
-          <Text style={styles.secondaryTextValue}>
-            {props.detail.service.uuid}
+    <View>
+      <View style={styles.listItem}>
+        <View style={styles.listItemContent}>
+          <Text style={styles.heading2}>
+            Custom Service: {props.detail.service.id}
           </Text>
+          <View style={styles.secondaryText}>
+            <Text style={styles.secondaryTextName}>UUID: </Text>
+            <Text style={styles.secondaryTextValue}>
+              {props.detail.service.uuid}
+            </Text>
+          </View>
+          <TouchableOpacity
+            onPress={() => toggleCollapsed()}
+            style={styles.viewDetailsButton}>
+            <Text style={styles.cButtonText}>{'View'}</Text>
+          </TouchableOpacity>
         </View>
       </View>
-      {/*{!collapsed && <View>/!*<Text>{detail.}</Text>*!/</View>}*/}
+      {!collapsed && (
+        <View style={styles.collapsedView}>
+          {props.detail.characteristics.map(char => (
+            <CharacteristicBox
+              char={char}
+              key={char.id}
+              readValue={props.readValue.bind(null, props.detail.service)}
+            />
+          ))}
+        </View>
+      )}
     </View>
   );
 }
 
-function DeviceView(props: {device: {}, details: []}) {
-  console.log(props.details);
+function DeviceView(props: {device: {}, readValue: () => {}, details: []}) {
   return (
     <SafeAreaView>
       <View>
         <Text style={styles.titlebar}>{props.device.name}</Text>
-        <View style={styles.listWrapper}>
-          {props.details.map(detail => (
-            <ServiceDetail detail={detail} />
+        <ScrollView style={styles.listWrapper}>
+          {props.details.map((detail, k) => (
+            <ServiceDetail
+              detail={detail}
+              key={k}
+              readValue={props.readValue}
+            />
           ))}
-        </View>
+        </ScrollView>
       </View>
     </SafeAreaView>
   );
 }
 
 const App: () => Node = () => {
-  const {requestPermissions, scanForDevices, getDeviceDetails, devices} =
-    useBLE();
+  const {
+    requestPermissions,
+    scanForDevices,
+    getDeviceDetails,
+    readCharacteristic,
+    devices,
+  } = useBLE();
   const [startedScan, setStartedScan] = useState(false);
   const [selectedDevice, setSelectedDevice] = useState(null);
 
   // const {openModal, setOpenModal} = useState(false);
+
+  const readValue = async (service, cid) => {
+    const characteristic = await readCharacteristic(service, cid);
+
+    for (let detail of selectedDevice.details) {
+      if (detail.service?.uuid === characteristic.serviceUUID) {
+        for (let cKey in detail.characteristics) {
+          if (detail.characteristics[cKey]?.uuid === cid) {
+            detail.characteristics[cKey] = characteristic;
+            setSelectedDevice({...selectedDevice});
+            return;
+          }
+        }
+      }
+    }
+  };
 
   const onStart = () => {
     requestPermissions(granted => {
@@ -123,6 +204,7 @@ const App: () => Node = () => {
           <DeviceView
             device={selectedDevice.ble}
             details={selectedDevice.details}
+            readValue={readValue}
           />
         )
       ) : (
@@ -167,6 +249,13 @@ const styles = StyleSheet.create({
     borderBottomColor: 'grey',
     borderBottomWidth: 1,
   },
+  collapsedView: {
+    paddingHorizontal: 50,
+    paddingVertical: 10,
+    color: 'black',
+    borderBottomColor: 'grey',
+    borderBottomWidth: 1,
+  },
   listItemContent: {},
   listItemAction: {},
   heading2: {
@@ -183,6 +272,14 @@ const styles = StyleSheet.create({
     fontSize: 15,
     fontWeight: 'bold',
     color: 'black',
+  },
+  collapsedItemTitle: {
+    fontSize: 15,
+    fontWeight: 'bold',
+    color: 'black',
+  },
+  characteristicBox: {
+    marginBottom: 10,
   },
   heartRateText: {
     fontSize: 25,
@@ -205,7 +302,15 @@ const styles = StyleSheet.create({
     width: 50,
     borderRadius: 8,
   },
-
+  viewDetailsButton: {
+    backgroundColor: 'purple',
+    justifyContent: 'center',
+    alignItems: 'center',
+    height: 30,
+    width: 40,
+    borderRadius: 8,
+    marginTop: 10,
+  },
   scButtonText: {
     fontSize: 18,
     fontWeight: 'bold',
