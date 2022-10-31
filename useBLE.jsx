@@ -1,6 +1,7 @@
 import {Platform, PermissionsAndroid} from 'react-native';
-import {BleManager} from 'react-native-ble-plx';
+import {BleErrorCode, BleManager} from 'react-native-ble-plx';
 import {useState} from 'react';
+import Base64 from 'react-native-base64';
 
 const bleManager = new BleManager();
 
@@ -46,8 +47,25 @@ export default function useBLE() {
     console.log('connected to device');
     device = await device.discoverAllServicesAndCharacteristics();
     console.log('discovered');
-    const value = await device.readCharacteristicForService(service.uuid, cid);
+    let value = await device.readCharacteristicForService(service.uuid, cid);
     console.log('read: ' + JSON.stringify(value));
+
+    await device.cancelConnection();
+
+    return value;
+  };
+
+  const writeCharacteristic = async (service, cid, data) => {
+    let device = await bleManager.connectToDevice(service.deviceID);
+    console.log('connected to device');
+    device = await device.discoverAllServicesAndCharacteristics();
+    console.log('discovered');
+    const value = await device.writeCharacteristicWithResponseForService(
+      service.uuid,
+      cid,
+      Base64.encode(data),
+    );
+    console.log('wrote and got response: ' + JSON.stringify(value));
 
     await device.cancelConnection();
 
@@ -98,6 +116,7 @@ export default function useBLE() {
     scanForDevices: scanDevices,
     getDeviceDetails,
     readCharacteristic,
+    writeCharacteristic,
     devices,
   };
 }

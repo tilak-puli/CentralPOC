@@ -5,6 +5,7 @@ import {
   ScrollView,
   StyleSheet,
   Text,
+  TextInput,
   TouchableOpacity,
   View,
 } from 'react-native';
@@ -52,13 +53,19 @@ function DevicesList(props: {devices: [], onDeviceConnect: () => {}}) {
   );
 }
 
-function CharacteristicBox(props: {char: any, readValue: () => {}}) {
-  const properties = [
-    props.char.isReadable && 'READ',
-    (props.char.isWritableWithResponse ||
-      props.char.isWritableWithoutResponse) &&
-      'WRITE',
-  ].filter(v => v !== false);
+function CharacteristicBox(props: {
+  char: any,
+  readValue: () => {},
+  writeValue: () => {},
+}) {
+  const [data, setData] = useState('');
+  const canRead = props.char.isReadable;
+  const canWrite =
+    props.char.isWritableWithResponse || props.char.isWritableWithoutResponse;
+
+  const properties = [canRead && 'READ', canWrite && 'WRITE'].filter(
+    v => v !== false,
+  );
 
   return (
     <View style={styles.characteristicBox}>
@@ -81,16 +88,41 @@ function CharacteristicBox(props: {char: any, readValue: () => {}}) {
         <Text style={styles.secondaryTextName}>Properties: </Text>
         <Text style={styles.secondaryTextValue}>{properties.join(', ')}</Text>
       </View>
-      <TouchableOpacity
-        onPress={() => props.readValue(props.char.uuid)}
-        style={styles.viewDetailsButton}>
-        <Text style={styles.cButtonText}>{'Read'}</Text>
-      </TouchableOpacity>
+      <View style={styles.secondaryText}>
+        <Text style={styles.secondaryTextName}>Log: </Text>
+        <Text style={styles.secondaryTextValue}>{props.char.message}</Text>
+      </View>
+      {canRead && (
+        <TouchableOpacity
+          onPress={() => props.readValue(props.char.uuid)}
+          style={styles.viewDetailsButton}>
+          <Text style={styles.cButtonText}>{'Read'}</Text>
+        </TouchableOpacity>
+      )}
+      {canWrite && (
+        <View>
+          <TextInput
+            style={styles.input}
+            onChangeText={t => setData(t)}
+            value={data}
+            placeholder="Enter text to send"
+          />
+          <TouchableOpacity
+            onPress={() => props.writeValue(props.char.uuid, data)}
+            style={styles.viewDetailsButton}>
+            <Text style={styles.cButtonText}>{'Write'}</Text>
+          </TouchableOpacity>
+        </View>
+      )}
     </View>
   );
 }
 
-function ServiceDetail(props: {detail: any, readValue: () => {}}) {
+function ServiceDetail(props: {
+  detail: any,
+  readValue: () => {},
+  writeValue: () => {},
+}) {
   const [collapsed, setCollapsed] = useState(true);
   const toggleCollapsed = () => {
     setCollapsed(prev => !prev);
@@ -123,6 +155,7 @@ function ServiceDetail(props: {detail: any, readValue: () => {}}) {
               char={char}
               key={char.id}
               readValue={props.readValue.bind(null, props.detail.service)}
+              writeValue={props.writeValue.bind(null, props.detail.service)}
             />
           ))}
         </View>
@@ -131,7 +164,12 @@ function ServiceDetail(props: {detail: any, readValue: () => {}}) {
   );
 }
 
-function DeviceView(props: {device: {}, readValue: () => {}, details: []}) {
+function DeviceView(props: {
+  device: {},
+  readValue: () => {},
+  writeValue: () => {},
+  details: [],
+}) {
   return (
     <SafeAreaView>
       <View>
@@ -142,6 +180,7 @@ function DeviceView(props: {device: {}, readValue: () => {}, details: []}) {
               detail={detail}
               key={k}
               readValue={props.readValue}
+              writeValue={props.writeValue}
             />
           ))}
         </ScrollView>
@@ -150,12 +189,36 @@ function DeviceView(props: {device: {}, readValue: () => {}, details: []}) {
   );
 }
 
+function updateCharacteristic(
+  selectedDevice,
+  serviceUUID,
+  cid,
+  getUpdatedChar,
+) {
+  for (let detail of selectedDevice.details) {
+    if (detail.service?.uuid === serviceUUID) {
+      console.log('found service');
+      for (let cKey in detail.characteristics) {
+        console.log('found characteristic');
+        if (detail.characteristics[cKey]?.uuid === cid) {
+          console.log('updating characteristic');
+          detail.characteristics[cKey] = getUpdatedChar(
+            detail.characteristics[cKey],
+          );
+          return {...selectedDevice};
+        }
+      }
+    }
+  }
+}
+
 const App: () => Node = () => {
   const {
     requestPermissions,
     scanForDevices,
     getDeviceDetails,
     readCharacteristic,
+    writeCharacteristic,
     devices,
   } = useBLE();
   const [startedScan, setStartedScan] = useState(false);
@@ -166,17 +229,30 @@ const App: () => Node = () => {
   const readValue = async (service, cid) => {
     const characteristic = await readCharacteristic(service, cid);
 
-    for (let detail of selectedDevice.details) {
-      if (detail.service?.uuid === characteristic.serviceUUID) {
-        for (let cKey in detail.characteristics) {
-          if (detail.characteristics[cKey]?.uuid === cid) {
-            detail.characteristics[cKey] = characteristic;
-            setSelectedDevice({...selectedDevice});
-            return;
-          }
-        }
-      }
-    }
+    const updatedSelectedDevice = updateCharacteristic(
+      selectedDevice,
+      characteristic.serviceUUID,
+      cid,
+      () => characteristic,
+    );
+
+    setSelectedDevice(updatedSelectedDevice);
+  };
+
+  const writeValue = async (service, cid, value) => {
+    const characteristic = await writeCharacteristic(service, cid, value);
+
+    const updatedSelectedDevice = updateCharacteristic(
+      selectedDevice,
+      characteristic.serviceUUID,
+      cid,
+      prev => {
+        prev.message = 'Wrote Value: ' + Base64.decode(characteristic.value);
+        return prev;
+      },
+    );
+
+    setSelectedDevice(updatedSelectedDevice);
   };
 
   const onStart = () => {
@@ -205,6 +281,7 @@ const App: () => Node = () => {
             device={selectedDevice.ble}
             details={selectedDevice.details}
             readValue={readValue}
+            writeValue={writeValue}
           />
         )
       ) : (
@@ -219,6 +296,13 @@ const App: () => Node = () => {
 };
 
 const styles = StyleSheet.create({
+  input: {
+    height: 40,
+    margin: 12,
+    borderWidth: 1,
+    padding: 10,
+    color: 'black',
+  },
   container: {
     flex: 1,
     backgroundColor: '#f2f2f2',
