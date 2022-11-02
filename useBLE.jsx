@@ -1,46 +1,29 @@
 import {Platform, PermissionsAndroid} from 'react-native';
-import {BleErrorCode, BleManager} from 'react-native-ble-plx';
+import BleManager, {retrieveServices} from 'react-native-ble-manager';
 import {useState} from 'react';
 import Base64 from 'react-native-base64';
 
-const bleManager = new BleManager();
-
-const isDuplicateDevice = (allDevices, nextDevice) =>
-  allDevices.findIndex(device => device.id === nextDevice.id) > -1;
+const bleManager = {};
 
 export default function useBLE() {
   const [devices, setDevices] = useState([]);
 
-  const scanDevices = () => {
-    bleManager.startDeviceScan(null, null, (error, device) => {
-      if (error) {
-        console.log(error);
-        alert('Failed to start scan');
-        return;
-      }
+  const scanDevices = async () => {
+    console.log('scanning for devices');
+    try {
+      BleManager.scan(['AB25'], 15, false).then(async e => {
+        console.log('scan done');
+        const peripherals = await BleManager.getDiscoveredPeripherals();
+        console.log(peripherals);
 
-      setDevices(prev => {
-        if (!isDuplicateDevice(prev, device)) {
-          return [...prev, device];
-        }
-
-        return prev;
+        setDevices(peripherals);
       });
-    });
+    } catch (error) {
+      console.log(error);
+      alert('Failed to start scan');
+      return;
+    }
   };
-
-  async function getUniqueServices(device) {
-    let services = await device.services();
-    const uniqueServiceUUID = {};
-    return services.filter(service => {
-      if (uniqueServiceUUID[service.uuid] === undefined) {
-        uniqueServiceUUID[service.uuid] = 1;
-        return true;
-      }
-
-      return false;
-    });
-  }
 
   const readCharacteristic = async (service, cid) => {
     let device = await bleManager.connectToDevice(service.deviceID);
@@ -73,19 +56,7 @@ export default function useBLE() {
   };
 
   const getDeviceDetails = async device => {
-    device = await device.connect();
-    device = await device.discoverAllServicesAndCharacteristics();
-    let services = await getUniqueServices(device);
-
-    const promises = services.map(async service => ({
-      characteristics: await service.characteristics(),
-      service: service,
-    }));
-
-    const details = await Promise.all(promises);
-    await device.cancelConnection();
-
-    return {device, details};
+    return await retrieveServices(device.id);
   };
 
   const requestPermissions = async callback => {
@@ -111,6 +82,21 @@ export default function useBLE() {
     }
   };
 
+  const start = async () => {
+    BleManager.enableBluetooth()
+      .then(() => {
+        BleManager.start().then(() => {
+          console.log('Module initialized');
+        });
+      })
+      .catch(e => {
+        console.error('User rejected: ', e);
+        alert(
+          'Bluetooth is required to scan. Please enable bluetooth and restart the app',
+        );
+      });
+  };
+
   return {
     requestPermissions,
     scanForDevices: scanDevices,
@@ -118,5 +104,6 @@ export default function useBLE() {
     readCharacteristic,
     writeCharacteristic,
     devices,
+    start,
   };
 }

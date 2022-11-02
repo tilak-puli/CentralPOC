@@ -1,4 +1,4 @@
-import React, {useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import type {Node} from 'react';
 import {
   SafeAreaView,
@@ -37,6 +37,7 @@ function DeviceBox(props: {device: any, onDeviceConnect: () => void}) {
 }
 
 function DevicesList(props: {devices: [], onDeviceConnect: () => {}}) {
+  console.log(props.devices);
   return (
     <ScrollView style={styles.flexItem}>
       <Text style={styles.titlebar}>{'Available Devices'}</Text>
@@ -219,6 +220,7 @@ const App: () => Node = () => {
     getDeviceDetails,
     readCharacteristic,
     writeCharacteristic,
+    start,
     devices,
   } = useBLE();
   const [startedScan, setStartedScan] = useState(false);
@@ -257,13 +259,16 @@ const App: () => Node = () => {
 
   const onStart = () => {
     requestPermissions(granted => {
-      alert('granted: ' + granted);
       if (granted) {
         scanForDevices();
         setStartedScan(true);
       }
     });
   };
+
+  useEffect(() => {
+    start();
+  }, []);
 
   return (
     <SafeAreaView style={styles.container}>
