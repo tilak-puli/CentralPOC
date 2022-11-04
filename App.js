@@ -8,10 +8,13 @@ import {
   TextInput,
   TouchableOpacity,
   View,
+  NativeModules,
 } from 'react-native';
 
 import useBLE from './useBLE';
 import Base64 from 'react-native-base64';
+
+const {BLEPeripheralManager} = NativeModules;
 
 function DeviceBox(props: {device: any, onDeviceConnect: () => void}) {
   return (
@@ -225,6 +228,8 @@ const App: () => Node = () => {
   const [selectedDevice, setSelectedDevice] = useState(null);
 
   // const {openModal, setOpenModal} = useState(false);
+
+  BLEPeripheralManager.start('from react native');
 
   const readValue = async (service, cid) => {
     const characteristic = await readCharacteristic(service, cid);

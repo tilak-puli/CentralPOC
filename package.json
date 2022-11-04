@@ -10,7 +10,6 @@
     "lint": "eslint ."
   },
   "dependencies": {
-    "@shopify/react-native-skia": "^0.1.156",
     "prettier": "^2.7.1",
     "react": "18.1.0",
     "react-native": "0.70.4",

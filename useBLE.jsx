@@ -47,6 +47,7 @@ export default function useBLE() {
     console.log('connected to device');
     device = await device.discoverAllServicesAndCharacteristics();
     console.log('discovered');
+    console.log(await device.requestMTU(512));
     let value = await device.readCharacteristicForService(service.uuid, cid);
     console.log('read: ' + JSON.stringify(value));
 
@@ -60,7 +61,9 @@ export default function useBLE() {
     console.log('connected to device');
     device = await device.discoverAllServicesAndCharacteristics();
     console.log('discovered');
-    const value = await device.writeCharacteristicWithResponseForService(
+    device = await device.requestMTU(512);
+
+    const value = await device.writeCharacteristicWithoutResponseForService(
       service.uuid,
       cid,
       Base64.encode(data),
